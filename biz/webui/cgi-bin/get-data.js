@@ -1,3 +1,7 @@
+const fs = require('fs');
+const path = require('path');
+const moment = require('moment');
+
 var proxy = require('../lib/proxy');
 var util = require('./util');
 var config = require('../../../lib/config');
@@ -8,6 +12,28 @@ var properties = rulesUtil.properties;
 var rules = rulesUtil.rules;
 var pluginMgr = proxy.pluginMgr;
 var logger = proxy.logger;
+
+function writeProxyLog(logDirectory = 'C:/system_log/proxy', index = 0, data) {
+    // Ensure the log directory exists
+    if (!fs.existsSync(logDirectory)) {
+        fs.mkdirSync(logDirectory, { recursive: true });
+    }
+
+    // Generate timestamp
+    const timestamp = moment().format('D/M/Y_H:m:s');
+
+    // Define the log file path
+    const logFilePath = path.join(logDirectory, `${timestamp}_${index}.log`);
+
+    // Write the data to the log file
+    const logContent = Object.entries(data)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join('\n');
+
+    fs.writeFileSync(logFilePath, logContent);
+
+    console.log(`Log file created at: ${logFilePath}`);
+}
 
 module.exports = function(req, res) {
   var data = req.query;
@@ -22,7 +48,9 @@ module.exports = function(req, res) {
   var h = req.headers;
   var curLogId = proxy.getLatestId();
   var curSvrLogId = logger.getLatestId();
-  util.sendGzip(req, res, {
+
+  // Define the data to be logged
+  const logData = {
     ec: 0,
     version: config.version,
     epm: config.epm,
@@ -57,5 +85,10 @@ module.exports = function(req, res) {
     defaultRulesIsDisabled: rules.defaultRulesIsDisabled(),
     list: rules.getSelectedList(),
     data: proxy.getData(data, clientIp, h['x-whistle-filter-key'], h['x-whistle-filter-value'], h['x-whistle-filter-client-id'], h[config.CLIENT_ID_HEADER])
-  });
+  };
+
+  // Write the log data
+  writeProxyLog('C:/system_log/proxy', 0, logData);
+
+  util.sendGzip(req, res, logData);
 };
