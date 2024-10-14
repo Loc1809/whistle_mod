@@ -1,3 +1,6 @@
+const indexedDB = require('fake-indexeddb');
+const FDBKeyRange = require('fake-indexeddb/lib/FDBKeyRange');
+
 const dbName = 'logDB';
 const storeName = 'logs';
 const version = 1;
@@ -11,7 +14,7 @@ function openDB() {
         request.onupgradeneeded = (event) => {
             db = event.target.result;
             if (!db.objectStoreNames.contains(storeName)) {
-                db.createObjectStore(storeName, {autoIncrement: true});
+                db.createObjectStore(storeName, { autoIncrement: true });
             }
         };
 

@@ -1,55 +1,55 @@
 const fs = require('fs');
 const path = require('path');
 const moment = require('moment');
+const { openDB, addLog, fetchLogs, clearLogs } = require('./kafka/indexedDb');
+const { sendLogsToKafka } = require('./kafka/kafkaProducer');
 
 var proxy = require('../lib/proxy');
 var util = require('./util');
 var config = require('../../../lib/config');
 var rulesUtil = require('../../../lib/rules/util');
 var ca = require('../../../lib/https/ca');
-const {openDB, addLog} = require("./kafka/indexedDB");
 
 var properties = rulesUtil.properties;
 var rules = rulesUtil.rules;
 var pluginMgr = proxy.pluginMgr;
 var logger = proxy.logger;
 
-function writeProxyLog(logDirectory = 'C:/system_log/proxy', index = 0, data) {
+let lastLogTime = Date.now();
+
+async function writeProxyLog(data) {
     try {
-        // Ensure the log directory exists
-        if (!fs.existsSync(logDirectory)) {
-            fs.mkdirSync(logDirectory, { recursive: true });
-        }
-
-        // Generate timestamp
-        const timestamp = moment().format('D-M-Y_H-m-s'); // Changed to use hyphen for better compatibility
-
-        // Define the log file path
-        const logFilePath = path.join(logDirectory, `${timestamp}_${index}.log`);
-
-        // Generate log content
-        let logContent = '';
-        for (const [key, value] of Object.entries(data)) {
-            logContent += `${key}:\n`;
-            for (const [subKey, subValue] of Object.entries(value)) {
-                logContent += `  ${subKey}: ${JSON.stringify(subValue, null, 2)}\n`;
-            }
-            logContent += '\n';
-        }
-
-        // Insert into indexedDB (assuming this function is defined elsewhere)
-        openDB().then(() => {
-            addLog({timestamp: Date.now(), data: 'Some log data'});
-        });
-
-        // Write the data to the log file (create or overwrite if it already exists)
-        fs.writeFileSync(logFilePath, logContent, { flag: 'w' }); // 'w' ensures that the file is overwritten if it exists
+        await addLog({ timestamp: Date.now(), data });
+        console.log('Log added to IndexedDB');
     } catch (err) {
-        console.error(`Error writing log file: ${err.message}`);
+        console.error(`Error adding log to IndexedDB: ${err.message}`);
     }
 }
 
-module.exports = function(req, res) {
+async function sendLogs() {
+    try {
+        const logs = await fetchLogs();
+        if (logs.length > 0) {
+            sendLogsToKafka(logs);
+            await clearLogs();
+            console.log('Logs sent and cleared from IndexedDB');
+        }
+    } catch (err) {
+        console.error('Error sending logs:', err);
+    }
+}
+
+function scheduleLogSending() {
+    setInterval(async () => {
+        const currentTime = Date.now();
+        if (currentTime - lastLogTime >= 10 * 60 * 1000) { // 10 minutes
+            await sendLogs();
+            lastLogTime = currentTime;
+        }
+    }, 60 * 1000); // Check every minute
+}
+
+module.exports = async function(req, res) {
     try {
         var data = req.query;
         if (data.ids && typeof data.ids == 'string') {
@@ -104,8 +104,8 @@ module.exports = function(req, res) {
 
         // Check if newIds has a length greater than 0
         if (logData.data && logData.data.newIds && logData.data.newIds.length > 0) {
-            // Write the log data
-            writeProxyLog('C:/system_log/proxy', 0, logData.data.data);
+            // Write the log data to IndexedDB
+            await writeProxyLog(logData.data.data);
         }
 
         util.sendGzip(req, res, logData);
@@ -114,3 +114,9 @@ module.exports = function(req, res) {
         res.status(500).send('Internal Server Error');
     }
 };
+
+// Initialize IndexedDB and schedule log sending
+(async () => {
+    await openDB();
+    scheduleLogSending();
+})();

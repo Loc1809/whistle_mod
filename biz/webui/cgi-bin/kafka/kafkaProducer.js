@@ -1,5 +1,6 @@
 const kafka = require('kafka-node');
-const client = new kafka.KafkaClient({kafkaHost: 'localhost:9092'});
+
+const client = new kafka.KafkaClient({ kafkaHost: 'localhost:9092' });
 const producer = new kafka.Producer(client);
 
 producer.on('ready', () => {
@@ -12,7 +13,7 @@ producer.on('error', (err) => {
 
 function sendLogsToKafka(logs) {
     const payloads = logs.map(log => ({
-        topic: 'logs',
+        topic: 'web-logs',
         messages: JSON.stringify(log)
     }));
 
